@@ -31,9 +31,10 @@ jobs:
             Write-Host "target klasoru yok"
           }
 
-      - name: Create MSI with jpackage
+      - name: Create MSI with jpackage (console on)
         shell: powershell
         run: |
+          # target içindeki jar'ı bul (sources/javadoc/original hariç)
           $jar = Get-ChildItem -Path target -Filter "*.jar" |
             Where-Object { $_.Name -notmatch "sources|javadoc|original" } |
             Sort-Object LastWriteTime -Descending |
@@ -45,7 +46,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
-                    jpackage `
+          jpackage `
             --type msi `
             --name MaasUygulama `
             --input target `
@@ -55,7 +56,7 @@ jobs:
             --win-menu `
             --win-shortcut `
             --win-console `
-            --java-options "--add-modules=javafx.controls,javafx.graphics"
+            --java-options "--add-modules=javafx.controls,javafx.graphics -Djava.awt.headless=false"
 
       - name: Upload MSI
         uses: actions/upload-artifact@v4

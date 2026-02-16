@@ -1,0 +1,42 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build fat jar
+        run: mvn -q -DskipTests package
+
+      - name: Create MSI with jpackage
+        shell: powershell
+        run: |
+          $jar = Get-ChildItem -Path target -Filter "*-shaded.jar" | Select-Object -First 1
+          if (-not $jar) { throw "Shaded jar not found in target/" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          jpackage `
+            --type msi `
+            --name MaasUygulama `
+            --input target `
+            --main-jar $jar.Name `
+            --main-class tr.ornek.maas.MainApp `
+            --dest dist `
+            --win-menu `
+            --win-shortcut
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaasUygulama-MSI
+          path: dist/*.msi

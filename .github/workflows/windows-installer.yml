@@ -2,32 +2,46 @@ name: Build Windows Installer
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build-msi:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Build fat jar
+      - name: Build jar
         run: mvn -q -DskipTests package
 
-            - name: Create MSI with jpackage
+      - name: Show target folder
         shell: powershell
         run: |
-          # target içindeki jar'ı bul (sources/javadoc/original olanları alma)
+          Write-Host "---- TARGET CONTENT ----"
+          if (Test-Path target) {
+            Get-ChildItem target -Recurse | Select-Object FullName, LastWriteTime
+          } else {
+            Write-Host "target klasoru yok"
+          }
+
+      - name: Create MSI with jpackage
+        shell: powershell
+        run: |
           $jar = Get-ChildItem -Path target -Filter "*.jar" |
             Where-Object { $_.Name -notmatch "sources|javadoc|original" } |
+            Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
 
           if (-not $jar) { throw "Jar not found in target/" }
+
+          Write-Host ("Secilen jar: " + $jar.Name)
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 

@@ -19,10 +19,10 @@ jobs:
       - name: Build fat jar
         run: mvn -q -DskipTests package
 
-      -       - name: Create MSI with jpackage
+            - name: Create MSI with jpackage
         shell: powershell
         run: |
-          # target içindeki jar'ı bul (sources/javadoc/test olanları alma)
+          # target içindeki jar'ı bul (sources/javadoc/original olanları alma)
           $jar = Get-ChildItem -Path target -Filter "*.jar" |
             Where-Object { $_.Name -notmatch "sources|javadoc|original" } |
             Select-Object -First 1
@@ -40,6 +40,7 @@ jobs:
             --dest dist `
             --win-menu `
             --win-shortcut
+
       - name: Upload MSI
         uses: actions/upload-artifact@v4
         with:

@@ -8,6 +8,9 @@ jobs:
   build-msi:
     runs-on: windows-latest
 
+    env:
+      JAVA_FX_VERSION: "21.0.2"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,23 +21,67 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Build jar
+      - name: Build jar (downloads dependencies too)
         run: mvn -q -DskipTests package
+
+      - name: Download JavaFX jmods (Windows)
+        shell: powershell
+        run: |
+          mvn -q dependency:copy `
+            -Dartifact=org.openjfx:javafx-jmods:${env:JAVA_FX_VERSION}:win:zip `
+            -DoutputDirectory=javafx_jmods `
+            -Dmdep.stripVersion=true
+
+          Get-ChildItem javafx_jmods
+
+          # unzip
+          $zip = Get-ChildItem -Path javafx_jmods -Filter "*.zip" | Select-Object -First 1
+          if (-not $zip) { throw "JavaFX jmods zip not found" }
+
+          New-Item -ItemType Directory -Force -Path javafx_jmods_unzipped | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath javafx_jmods_unzipped -Force
+
+          Write-Host "---- JavaFX jmods folder ----"
+          Get-ChildItem javafx_jmods_unzipped -Recurse -Directory | Select-Object FullName
+
+      - name: Create custom runtime with jlink (includes JavaFX)
+        shell: powershell
+        run: |
+          # find extracted jmods directory
+          $jmodsDir = Get-ChildItem -Path javafx_jmods_unzipped -Recurse -Directory |
+            Where-Object { $_.Name -eq "jmods" } |
+            Select-Object -First 1
+
+          if (-not $jmodsDir) { throw "Could not find 'jmods' directory inside JavaFX zip" }
+
+          Write-Host ("JavaFX jmods path: " + $jmodsDir.FullName)
+
+          # module paths: JDK jmods + JavaFX jmods
+          $modulePath = "$env:JAVA_HOME\jmods;$($jmodsDir.FullName)"
+
+          # build runtime
+          New-Item -ItemType Directory -Force -Path runtime | Out-Null
+
+          & "$env:JAVA_HOME\bin\jlink.exe" `
+            --module-path $modulePath `
+            --add-modules java.base,java.sql,java.logging,java.desktop,javafx.controls,javafx.graphics `
+            --output runtime `
+            --strip-debug `
+            --no-header-files `
+            --no-man-pages `
+            --compress=2
+
+          Write-Host "Runtime created."
 
       - name: Show target folder
         shell: powershell
         run: |
           Write-Host "---- TARGET CONTENT ----"
-          if (Test-Path target) {
-            Get-ChildItem target -Recurse | Select-Object FullName, LastWriteTime
-          } else {
-            Write-Host "target klasoru yok"
-          }
+          Get-ChildItem target -Recurse | Select-Object FullName, LastWriteTime
 
-      - name: Create MSI with jpackage (console on)
+      - name: Create MSI with jpackage (uses custom runtime)
         shell: powershell
         run: |
-          # target içindeki jar'ı bul (sources/javadoc/original hariç)
           $jar = Get-ChildItem -Path target -Filter "*.jar" |
             Where-Object { $_.Name -notmatch "sources|javadoc|original" } |
             Sort-Object LastWriteTime -Descending |
@@ -42,21 +89,20 @@ jobs:
 
           if (-not $jar) { throw "Jar not found in target/" }
 
-          Write-Host ("Secilen jar: " + $jar.Name)
+          Write-Host ("Selected jar: " + $jar.Name)
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
-          jpackage `
+          & "$env:JAVA_HOME\bin\jpackage.exe" `
             --type msi `
             --name MaasUygulama `
             --input target `
             --main-jar $jar.Name `
             --main-class tr.ornek.maas.MainApp `
+            --runtime-image runtime `
             --dest dist `
             --win-menu `
-            --win-shortcut `
-            --win-console `
-            --java-options "--add-modules=javafx.controls,javafx.graphics -Djava.awt.headless=false"
+            --win-shortcut
 
       - name: Upload MSI
         uses: actions/upload-artifact@v4
